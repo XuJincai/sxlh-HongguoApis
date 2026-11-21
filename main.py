@@ -11,6 +11,8 @@
     python main.py newrelease ai                    # 近 7 天上新（AI 剧）
     python main.py danmaku <book_id> <video_id>
     python main.py demo <关键词>     # 搜索 -> 详情 -> 播放地址 -> 评论 -> 弹幕 全链路
+    python main.py login              # 官网扫码登录 -> login_identity.json
+    python main.py account            # 打印已登录账号资料 + App 观看历史
 """
 
 import json
@@ -26,6 +28,8 @@ from hongguo_apis import (search_request, parse_search_response,
                           comment_list_request, parse_comment_list,
                           landpage_request, parse_landpage,
                           fetch_danmaku)
+
+LOGIN_IDENTITY_FILE = 'login_identity.json'
 
 IDENTITY_FILE = 'guest_identity.json'
 
@@ -195,6 +199,52 @@ def cmd_demo(guest, keyword):
     cmd_danmaku(guest, book['book_id'], vids[0])
 
 
+def cmd_login(guest):
+    """官网扫码登录：展示二维码 -> 轮询 -> 存 login_identity.json。"""
+    from hongguo_apis.login_api import (start_login, save_qr_image,
+                                        poll_qr_status, finish_redirect,
+                                        login_identity_from_cookies,
+                                        has_session, QR_STATUS_EXPIRED)
+    qr = start_login()
+    save_qr_image(qr, 'login_qr.png')
+    print(f"[+] 二维码已存 login_qr.png（{qr['expires_in']}s 内有效），请用红果 App 扫码")
+    token, cookies = qr['token'], qr['cookies']
+    deadline = time.time() + 300
+    while time.time() < deadline:
+        result = poll_qr_status(token, cookies)
+        cookies = result['cookies']
+        st = result['status']
+        if st in QR_STATUS_EXPIRED:
+            print('[-] 二维码已过期，请重新 login')
+            return
+        if st in ('2', 'scanned'):
+            print('[+] 已扫码，等待 App 端确认…')
+        if st in ('3', 'confirmed') and result['redirect_url']:
+            cookies = finish_redirect(result['redirect_url'], cookies)
+            jar = dict(p.partition('=')[::2] for p in cookies)
+            if not has_session(jar):
+                print('[-] 确认成功但未拿到 sessionid')
+                return
+            identity = login_identity_from_cookies(guest, cookies)
+            identity.save(LOGIN_IDENTITY_FILE)
+            print(f"[+] 登录成功 user_id={identity.user_id} "
+                  f"name={identity.user_name} -> {LOGIN_IDENTITY_FILE}")
+            return
+        time.sleep(3)
+    print('[-] 超时未扫码')
+
+
+def cmd_account():
+    """打印登录账号资料（官网 /passport/account/info/v2/）。"""
+    from utils.auth import LoginIdentity
+    from hongguo_apis.login_api import fetch_account_info
+    identity = LoginIdentity.from_json_file(LOGIN_IDENTITY_FILE)
+    info = fetch_account_info(identity.sessionid)
+    print(f"[+] user_id={info['user_id']}")
+    print(f"[+] name={info['name']}")
+    print(f"[+] avatar={info['avatar'][:80]}")
+
+
 def main():
     if len(sys.argv) < 2:
         print(__doc__)
@@ -216,6 +266,10 @@ def main():
         cmd_danmaku(guest, sys.argv[2], sys.argv[3])
     elif cmd == 'demo' and len(sys.argv) >= 3:
         cmd_demo(guest, sys.argv[2])
+    elif cmd == 'login' and len(sys.argv) >= 2:
+        cmd_login(guest)
+    elif cmd == 'account' and len(sys.argv) >= 2:
+        cmd_account()
     else:
         print(__doc__)
 

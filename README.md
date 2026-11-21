@@ -23,6 +23,8 @@
 
 登录态（sessionid，见下）：
 
+- **官网扫码登录** —— `passport/web/get_qrcode/` + `check_qrconnect/` 纯 HTTP 取 sessionid
+- **账号资料** —— `passport/account/info/v2/`
 - **发评论 / 点赞 / 追更** —— 写接口需要登录 cookie
 
 ## 签名体系
@@ -106,8 +108,22 @@ python main.py comments <book_id> <video_id>
 python main.py danmaku <book_id> <video_id>
 ```
 
-登录态：`LoginIdentity.from_guest(guest, sessionid='...', user_id='...')`，
-sessionid 从登录后的 App cookie 拿（`sessionid=...`），构造后写接口自动带 cookie。
+登录态：官网扫码即可，无需 App 抓包——
+
+```bash
+python main.py login      # 生成 login_qr.png，用红果 App 扫码确认
+python main.py account     # 验证登录态，打印账号资料
+```
+
+```python
+from hongguo_apis.login_api import start_login, wait_login
+qr = start_login()                        # qr['image'] 是 data:image/png;base64,...
+result = wait_login(guest, qr['token'], qr['cookies'], timeout=300)
+identity = result['identity']             # LoginIdentity（sessionid 已收好）
+```
+
+`login` 落盘 `login_identity.json`，之后所有请求自动带 sessionid cookie；
+上游参考 `LoginIdentity.from_guest(guest, sessionid='...')` 也保留可用。
 
 ## 目录结构
 
@@ -117,6 +133,7 @@ hongguo_apis/
   play_api.py        详情 / 播放地址（7.4.5 参数族）
   comment_api.py     官网 SSR 剧评
   danmaku_api.py     App 弹幕流（comment 专用签名族）
+  login_api.py       官网扫码登录（get_qrcode -> sessionid -> LoginIdentity）
 utils/
   hongguo_sign.py    x-gorgon / x-ladon / x-argus / x-helios / hash F13
   medusa.py          x-medusa（TLV + AesV3）

@@ -155,6 +155,25 @@ class TestSignOffline(unittest.TestCase):
         self.assertEqual(res['comments'][0]['user_name'], 'n')
         self.assertEqual(res['total'], 1)
 
+class LoginApiTest(unittest.TestCase):
+    """官网扫码登录模块的离线结构测试。"""
+
+    def test_cookie_jar(self):
+        from hongguo_apis.login_api import has_session, _absorb_cookies, _cookie_header
+        jar = {}
+        _absorb_cookies(jar, ['sessionid=aaa; Path=/; Domain=x; HttpOnly',
+                              'uid_tt=bbb; Max-Age=0'])
+        self.assertEqual(jar, {'sessionid': 'aaa', 'uid_tt': 'bbb'})
+        self.assertEqual(_cookie_header(jar), 'sessionid=aaa; uid_tt=bbb')
+        self.assertTrue(has_session({'sessionid_ss': 'x'}))
+        self.assertFalse(has_session({'passport_csrf_token': 'x'}))
+
+    def test_status_constants(self):
+        from hongguo_apis import login_api
+        self.assertIn('confirmed', login_api.QR_STATUS_CONFIRMED)
+        self.assertIn('3', login_api.QR_STATUS_CONFIRMED)
+        self.assertIn('expired', login_api.QR_STATUS_EXPIRED)
+
 
 if __name__ == '__main__':
     unittest.main()
