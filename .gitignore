@@ -1,0 +1,31 @@
+# 分析与调试过程文件，不进 git
+*.pyc
+__pycache__/
+guest_identity.json
+
+# 调试用一次性脚本
+ab_sweep.py
+aged_guest_test.py
+bisect_h2.py
+br_test.py
+const_ab.py
+final_bisect.py
+fresh_test.py
+full_py_e2e.py
+h2_test.py
+h2_to_tap.py
+live_ab.py
+medusa_live_dump.py
+raw_socket_test.py
+relay_dbg.py
+relay_test.py
+relay_timing.py
+relay_v2.py
+sbox_snippet.py
+swap_medusa.py
+wire_test.py
+
+# 调试产物
+py_md5v3.txt
+py_message_v0.bin
+sbox_b64_exact.txt
