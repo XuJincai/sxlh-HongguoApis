@@ -264,3 +264,21 @@ def wait_login(guest, token: str, cookies: list, interval: int = 3,
         cookies = result['cookies']
         time.sleep(interval)
     return {'signed_in': False, 'status': 'timeout', 'cookies': cookies}
+
+
+def login_identity_from_browser_cookie(guest, cookie_header: str):
+    """浏览器扫码后的 document.cookie 串 -> LoginIdentity（自动验证账号资料）。
+
+    cookie_header 形如 "passport_csrf_token=..; sessionid=..; ..."。
+    """
+    from utils.auth import LoginIdentity
+    jar = {}
+    for pair in cookie_header.split(';'):
+        name, _, value = pair.partition('=')
+        jar[name.strip()] = value.strip()
+    sessionid = jar.get('sessionid') or jar.get('sessionid_ss') or ''
+    if not sessionid:
+        raise RuntimeError('浏览器 cookie 里没有 sessionid')
+    identity = LoginIdentity.from_guest(guest, sessionid)
+    identity.sessionid_ss = jar.get('sessionid_ss', '')
+    return identity
