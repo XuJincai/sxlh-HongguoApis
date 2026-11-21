@@ -72,14 +72,29 @@ def _signed_post(identity, api: str, payload: dict):
 
 
 def video_detail_request(identity, book_id: str):
-    """短剧详情（剧集列表+简介）。book_id 形如 7703125506568244248。"""
-    sid = str(book_id)
+    """短剧详情（剧集列表+简介）。book_id 形如 7703125506568244248。
+
+    body 用 single_col 详情页形态（biz_param + series_id），
+    image_shrink_datas_str 为 base64 的图片缩放参数（客户端原值）。
+    """
     payload = {
-        'series_id': sid, 'source': 2,
-        'expand_info': {'page_params': [{'page_code': '0'}]},
-        'passback': '', 'need_bg_cover': True,
-        'expand_params': {'expand_inner_infos': {
-            'single_col_detail': [{'series_id': sid}]}},
+        'biz_param': {
+            'detail_page_version': 1,
+            'disable_digg_stat': False,
+            'disable_video_relate_book': False,
+            'image_shrink_datas_str': (
+                'W3siaW1hZ2VfdHlwZSI6MywiaW1hZ2Vfd2lkdGgiOjEwNzks'
+                'InNocmlua190eXBlIjozfSx7ImltYWdlX3R5cGUiOjQsImlt'
+                'YWdlX3dpZHRoIjo5NCwic2hyaW5rX3R5cGUiOjR9XQ==\n'),
+            'need_all_video_definition': False,
+            'need_mp4_align': False,
+            'screen_width_px': '1079',
+            'source': 5,
+            'use_os_player': False,
+            'use_server_dns': False,
+            'video_id_type': 1,
+        },
+        'series_id': str(book_id),
     }
     return _signed_post(identity, VIDEO_DETAIL_API, payload)
 
