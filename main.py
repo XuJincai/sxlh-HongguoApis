@@ -60,13 +60,13 @@ def http_post_json(url, body, headers, tries=4):
 def signed_post(fn, *args, **kwargs):
     """调用 *_request(identity, ...) 生成签名请求并执行。失败重签重试。"""
     last_err = None
-    for _ in range(4):
+    for _ in range(8):
         url, body, headers = fn(*args, **kwargs)
         try:
             return http_post_json(url, body, headers, tries=1)
         except (RuntimeError, json.JSONDecodeError) as ex:
             last_err = ex
-            time.sleep(0.4)
+            time.sleep(3)
     raise RuntimeError(f'签名请求多次失败: {last_err}')
 
 
