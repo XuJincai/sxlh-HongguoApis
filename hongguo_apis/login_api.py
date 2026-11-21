@@ -286,9 +286,9 @@ def login_identity_from_browser_cookie(guest, cookie_header: str):
 
 
 # ---------------------------------------------------------------------------
-# App 通道：手机验证码登录（ib.snssdk.com，aid=8662）
+# App 通道：手机验证码登录（security.snssdk.com，aid=8662）
 # ---------------------------------------------------------------------------
-APP_PASSPORT_BASE = 'https://ib.snssdk.com'
+APP_PASSPORT_BASE = 'https://security.snssdk.com'
 APP_UA = ('com.phoenix.read/74532 (Linux; U; Android 16; zh_CN; '
           '23116PN5BC; Build/BP2A.250605.031.A3; Cronet/TTNetVersion:8d40f833 '
           '2026-03-03 QuicVersion:21ac1950 2025-11-18)')
@@ -332,22 +332,58 @@ def _app_headers(url: str, guest, khronos: int, ticket: int) -> dict:
     return headers
 
 
-def _app_get(path: str, extra: dict, guest, timeout: int = 15):
-    """App 通道 GET：返回 (data_json, set_cookies)。
+def _passport_query(guest, ticket: int) -> str:
+    """passport 族 query 公共块（与客户端请求逐字段、顺序对齐）。"""
+    from utils.device_profile import build_common_query
+    import uuid as _uuid
+    common = build_common_query(guest, ticket)
+    # 会话标识：与设备绑定、跨请求稳定（客户端形态为 uuid / uuid#1）
+    sid = str(_uuid.uuid5(_uuid.NAMESPACE_DNS, 'ns-' + guest.device_id))
+    cold = str(_uuid.uuid5(_uuid.NAMESPACE_DNS, 'cs-' + guest.device_id))
+    session_state = '&'.join([
+        'normal_session_cnt_in_day=52',
+        'cold_start_session_cnt_in_day=32',
+        'sys_mini_window=1',
+        'app_mini_window=0',
+        'normal_session_id=' + urllib.parse.quote(sid + '#1', safe=''),
+        'har_status=0',
+        'cold_start_session_id=' + cold,
+        'cold_start_session_cnt_in_life=46',
+        'charging=1',
+        'normal_session_cnt_in_life=82',
+        'is_power_save_mode=0',
+        'app_dark_mode=0',
+        'screen_brightness=43',
+        'battery_pct=100',
+        'down_speed=60000',
+        'sys_dark_mode=0',
+        'font_scale=100',
+        'network_type=4',
+        'current_volume=13',
+    ])
+    # 客户端把 SDK 版本放在最前，会话状态参数附在公共块之后
+    return ('passport-sdk-version=5051452&use_new_token_expire_rule=true&'
+            + common + '&' + session_state)
 
-    query 走客户端公共块（30+ 字段、顺序固定），业务参数（mobile/type 等）
-    附加在公共块之后——与客户端 passport 请求形态一致。
-    """
+
+def _app_request(method: str, path: str, body: dict, extra: dict, guest,
+                 timeout: int = 15):
+    """App 通道 HTTP 基础函数（GET/POST 共用，query 形态与客户端一致）。"""
     khronos = int(time.time())
     ticket = int(time.time() * 1000)
-    from utils.device_profile import build_common_query
-    common = build_common_query(guest, ticket)
-    business = urllib.parse.urlencode({k: v for k, v in extra.items() if v})
-    # passport 族在公共块尾部补 ts（客户端形态）
-    query = common + '&ts=' + str(khronos) + ('&' + business if business else '')
+    common = _passport_query(guest, ticket)
+    business = urllib.parse.urlencode(
+        {k: v for k, v in extra.items() if v})
+    query = common + ('&' + business if business else '')
     url = APP_PASSPORT_BASE + path + '?' + query
-    req = urllib.request.Request(url, headers=_app_headers(url, guest,
-                                                           khronos, ticket))
+    headers = _app_headers(url, guest, khronos, ticket)
+    payload = None
+    if body is not None:
+        payload = json.dumps(
+            body, ensure_ascii=False, separators=(',', ':')).encode('utf-8')
+        headers['content-type'] = 'application/json; charset=utf-8'
+    req = urllib.request.Request(url, data=payload, headers=headers,
+                                 method=method)
     with urllib.request.urlopen(req, timeout=timeout) as r:
         raw = r.read()
         encoding = (r.headers.get('Content-Encoding') or '').lower()
@@ -355,6 +391,15 @@ def _app_get(path: str, extra: dict, guest, timeout: int = 15):
         raw = decode_response(raw, encoding)
         set_cookies = r.headers.get_all('Set-Cookie') or []
     return json.loads(raw.decode('utf-8', 'replace')), set_cookies
+
+
+def _app_get(path: str, extra: dict, guest, timeout: int = 15):
+    """App 通道 GET：返回 (data_json, set_cookies)。
+
+    query 走客户端公共块（30+ 字段、顺序固定），业务参数（mobile/type 等）
+    附加在公共块之后——与客户端 passport 请求形态一致。
+    """
+    return _app_request('GET', path, None, extra, guest, timeout)
 
 
 def send_sms_code(guest, mobile: str, code_type: int = 24) -> dict:
@@ -369,16 +414,18 @@ def send_sms_code(guest, mobile: str, code_type: int = 24) -> dict:
         'mix_mode': '1',
         'check_register': '1',
     }
-    body, _ = _app_get('/passport/mobile/send_code/v1/', extra, guest)
-    return body
+    # 客户端为 POST 空 body、参数全在 query
+    data, _ = _app_request('POST', '/passport/mobile/send_code/v1/', None,
+                            extra, guest)
+    return data
 
 
 def sms_login(guest, mobile: str, code: str, captcha: str = '',
-              sms_code_key: str = '') -> dict:
+              sms_code_key: str = '', verify_ticket: str = '') -> dict:
     """App 通道验证码登录。
 
-    :param sms_code_key: 服务端 2046（二次校验）响应里下发的
-        biz_params.sms_code_key，二次验证时必带（同样走混淆编码）。
+    :param verify_ticket: 二次校验（upsms）通过后拿到的 ticket，
+        带 ticket 重发即可完成登录。
     :returns: {data, set_cookies} —— sessionid 在 set_cookies 里
     """
     extra = {
@@ -390,29 +437,108 @@ def sms_login(guest, mobile: str, code: str, captcha: str = '',
         extra['captcha'] = captcha
     if sms_code_key:
         extra['sms_code_key'] = _xor5(sms_code_key)
-    data, set_cookies = _app_get('/passport/mobile/sms_login_only/', extra,
-                                 guest)
+    if verify_ticket:
+        extra['verify_ticket'] = _xor5(verify_ticket)
+    data, set_cookies = _app_request('POST', '/passport/mobile/sms_login_only/',
+                                     None, extra, guest)
     return {'data': data, 'set_cookies': set_cookies}
 
 
+def _app_post(path: str, body: dict, guest, extra_query: dict = None,
+              timeout: int = 15):
+    """App 通道 POST（JSON body，用于二次校验的 verify 类接口）。
+
+    query 与 GET 族相同：客户端公共块 + ts；body 为 JSON。
+    extra_query：附加到 query 尾部的参数（verify 族按协议要求与 body
+    同步注入 SDK 版本参数）。
+    """
+    return _app_request('POST', path, body, extra_query or {}, guest, timeout)
+
+
+SECOND_VERIFY_SDK_VERSION = '1.1.31'
+
+
+class MfaRequiredError(RuntimeError):
+    """触发 2046 二次校验；e.decision 是 2046 响应的 data 节点。"""
+
+    def __init__(self, msg, decision=None):
+        super().__init__(msg)
+        self.decision = decision or {}
+
+
+def _second_verify_common(mfa_data: dict) -> dict:
+    """二次校验请求的公共字段（decision 对象的核心子集）。"""
+    event = mfa_data.get('event_params') or {}
+    return {
+        'encrypt_uid': mfa_data.get('encrypt_uid') or '',
+        'verify_ticket': mfa_data.get('verify_ticket') or '',
+        'biz_params': mfa_data.get('biz_params') or {},
+        'verify_scene': event.get('verify_scene') or '',
+        'verify_reason': event.get('verify_reason') or '',
+    }
+
+
+def upsms_verify(guest, mfa_data: dict, verify_way: dict = None) -> dict:
+    """2046 二次校验：上行短信验证（/passport/upsms/verify/）。
+
+    用户向 channel_mobile 发送 sms_content（如 YZ）后，用 2046 响应
+    （mfa_data = data 节点）轮询本接口；服务端确认收到上行短信即通过，
+    返回 ticket，带 ticket 重发 sms_login 完成登录。
+
+    请求形态：body 为明文 JSON 的公共字段；SDK 版本参数按协议同时
+    注入 query 与 body（new_authn_sdk_version + 事件参数前缀化副本）。
+
+    :param mfa_data: 2046 响应的 data（含 encrypt_uid/biz_params/event_params）
+    :param verify_way: 选用的 verify_ways 条目（默认取 mobile_up_sms_verify）
+    :returns: {passed(bool), ticket, raw}
+    """
+    common = _second_verify_common(mfa_data)
+    event = mfa_data.get('event_params') or {}
+    # SDK 层注入：版本 + 事件参数前缀化副本
+    sdk_extra = {'new_authn_sdk_version': SECOND_VERIFY_SDK_VERSION}
+    for key, value in event.items():
+        sdk_extra['new_authn_sdk_' + key] = value
+    body = dict(common)
+    body.update(sdk_extra)
+    # query 侧同步注入（协议要求两侧一致）
+    extra_query = {k: (json.dumps(v, ensure_ascii=False, separators=(',', ':'))
+                       if isinstance(v, (dict, list)) else str(v))
+                   for k, v in sdk_extra.items()}
+    data, set_cookies = _app_post('/passport/upsms/verify/', body, guest,
+                                  extra_query)
+    inner = data.get('data') or {}
+    passed = (str(inner.get('error_code', -1)) in ('0', '')
+              and data.get('message') == 'success')
+    ticket = inner.get('ticket') or ''
+    return {'passed': passed, 'ticket': ticket, 'raw': data,
+            'set_cookies': set_cookies}
+
+
 def login_identity_from_sms(guest, mobile: str, code: str,
-                            captcha: str = '', sms_code_key: str = ''):
+                            captcha: str = '', sms_code_key: str = '',
+                            verify_ticket: str = ''):
     """验证码登录一步到位 -> LoginIdentity（含 sessionid）。
 
-    失败时抛 RuntimeError（带服务端描述）；触发 2046 二次校验时错误信息里
-    带新下发的 sms_code_key（形如 `MFA:b1dd…`），用该 key 加用户收到的
-    第二条验证码重试即可。
+    失败时抛 RuntimeError（带服务端描述）；触发 2046 二次校验时抛出的
+    错误带完整的 decision 数据（JSON 存在 last_2046.json，供 upsms_verify
+    轮询用）——用户按 decision 里的 channel_mobile 发送 sms_content
+    （如 YZ）完成运营商上行验证后，轮询拿 ticket 重登即可。
     """
     from utils.auth import LoginIdentity
-    result = sms_login(guest, mobile, code, captcha, sms_code_key)
+    result = sms_login(guest, mobile, code, captcha, sms_code_key, verify_ticket)
     data = result['data'].get('data') or {}
     if result['data'].get('message') != 'success' and not data.get('user_id'):
         desc = data.get('description') or result['data'].get('message') or '登录失败'
         if data.get('error_code') == 2046:
-            new_key = (data.get('biz_params') or {}).get('sms_code_key') or ''
-            raise RuntimeError(
-                f'验证码登录失败: 触发二次校验 (2046)。已下发新 sms_code_key={new_key}；'
-                '请等手机收到第二条验证码后，带该 key 重试')
+            try:
+                with open('last_2046.json', 'w', encoding='utf-8') as f:
+                    json.dump(result['data'], f, ensure_ascii=False, indent=1)
+            except OSError:
+                pass
+            raise MfaRequiredError(
+                '触发二次校验 (2046)，decision 已存 last_2046.json；'
+                '请向 decision 中 channel_mobile 号码发送 sms_content（如 YZ），'
+                '再调 upsms_verify 轮询拿 ticket 重登', data)
         raise RuntimeError(f'验证码登录失败: {desc} (error_code={data.get("error_code")})')
     jar = {}
     for sc in result['set_cookies']:

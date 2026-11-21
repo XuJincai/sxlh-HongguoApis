@@ -266,7 +266,8 @@ def cmd_account():
 
 def cmd_smslogin(guest, mobile, code=None, mfa_key=''):
     """手机验证码登录（App 通道，支持二次校验）。"""
-    from hongguo_apis.login_api import (send_sms_code, login_identity_from_sms)
+    from hongguo_apis.login_api import (send_sms_code, login_identity_from_sms,
+                                        upsms_verify, MfaRequiredError)
     if code is None:
         r = send_sms_code(guest, mobile)
         data = r.get('data') or {}
@@ -280,18 +281,31 @@ def cmd_smslogin(guest, mobile, code=None, mfa_key=''):
     try:
         identity = login_identity_from_sms(guest, mobile, code,
                                            sms_code_key=mfa_key)
+    except MfaRequiredError as e:
+        # 二次校验：按 decision 向 channel_mobile 发送 sms_content（如 YZ），
+        # 完成运营商上行验证后轮询拿 ticket 重登
+        decision = e.decision
+        way = next((w for w in (decision.get('verify_ways') or [])
+                    if w.get('verify_way') == 'mobile_up_sms_verify'), {})
+        print(f"[!] 需要二次校验：请用手机系统短信向 {way.get('channel_mobile')} "
+              f"发送内容「{way.get('sms_content')}」")
+        print('[*] 发送后按回车开始轮询验证…')
+        input()
+        for _ in range(10):
+            r = upsms_verify(guest, decision)
+            if r['passed'] and r['ticket']:
+                identity = login_identity_from_sms(
+                    guest, mobile, code, verify_ticket=r['ticket'])
+                identity.save(LOGIN_IDENTITY_FILE)
+                print(f"[+] 登录成功 user_id={identity.user_id} "
+                      f"name={identity.user_name} -> {LOGIN_IDENTITY_FILE}")
+                return
+            time.sleep(2)
+        print('[-] 轮询 10 次未通过，稍后可用 smslogin 重试')
+        return
     except RuntimeError as e:
-        msg = str(e)
-        if '2046' in msg and 'sms_code_key=' in msg:
-            # 触发二次校验：服务端已下发新 key，等第二条验证码
-            new_key = msg.split('sms_code_key=')[1].split('；')[0]
-            print('[!] 需要二次校验：新的验证码已发到手机（第二条短信）')
-            retry_code = input('code2> ').strip()
-            identity = login_identity_from_sms(guest, mobile, retry_code,
-                                               sms_code_key=new_key)
-        else:
-            print(f'[-] {msg}')
-            return
+        print(f'[-] {e}')
+        return
     identity.save(LOGIN_IDENTITY_FILE)
     print(f"[+] 登录成功 user_id={identity.user_id} "
           f"name={identity.user_name} -> {LOGIN_IDENTITY_FILE}")
