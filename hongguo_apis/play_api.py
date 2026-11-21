@@ -6,82 +6,73 @@ App 端点（均 POST，gzip JSON body，x-ss-stub = md5(body).upper()）：
 - /novel/player/multi_video_model/v1/ —— 批量取剧集播放源（video_model 内嵌 JSON）
 - /novel/player/multi_video_model/player/v1 —— 播放器场景批量取源
 
-签名族：x-gorgon + x-khronos + x-ss-stub + x-helios + x-medusa。
-7.4.5.32 指纹 + series_id 字段（payload 与 query 参数集按 App 7.4.5 版本对齐）。
+请求与 App 7.4.5 逐字段一致（utils/device_profile 公共块 + utils/alignment 校验）：
+query 34+1 参数含 klink_egdi，header 24 个含 x-reading-request/x-tt-trace-id，
+顺序均按客户端实际发送。
 """
 
 import json
 import random
 import time
 
-from utils.hongguo_sign import (python_url_encode, x_gorgon, x_ladon,
-                                 x_argus, x_helios, gzip_body, md5_hex)
+from utils.hongguo_sign import (x_gorgon, x_ladon, x_argus, x_helios,
+                                 gzip_body, md5_hex)
 from utils.medusa import build_medusa
+from utils.device_profile import (build_common_query, DEVICE_PROFILES,
+                                  new_trace_id, new_reading_request)
 
 API_BASE = 'https://api5-normal-sinfonlinea.fqnovel.com'
 VIDEO_DETAIL_API = API_BASE + '/novel/player/video_detail/v1/'
 VIDEO_MODEL_API = API_BASE + '/novel/player/multi_video_model/v1/'
 PLAYER_MODEL_API = API_BASE + '/novel/player/multi_video_model/player/v1'
 
-# 7.4.5.32 指纹（query 参数集按该版本客户端逐项对齐）
-_PLAY_DEVICE = {
-    'device_platform': 'android', 'os': 'android', 'ssmix': 'a',
-    'channel': 'update', 'aid': '8662', 'app_name': 'novelread',
-    'version_code': '74532', 'version_name': '7.4.5.32',
-    'manifest_version_code': '74532', 'update_version_code': '74532',
-    'resolution': '1080*2232', 'dpi': '420', 'device_type': '23116PN5BC',
-    'device_brand': 'Xiaomi', 'language': 'zh', 'os_api': '36',
-    'os_version': '16', 'ac': 'wifi', 'is_64_runtime': 'false',
-    'is_64_device': 'true', 'host_abi': 'armeabi-v7a',
-    'dragon_device_type': 'phone', 'pv_player': '74532',
-    'is_x86_device': 'false', 'compliance_status': '0',
-    'need_personal_recommend': '1', 'player_so_load': '1',
-    'is_android_pad_screen': '0',
-    'rom_version': 'miui_V816_OS3.0.309.0.WNBCNXM',
-}
-PLAY_UA = ('com.phoenix.read/74532 (Linux; U; Android 16; zh_CN; 23116PN5BC; '
-           'Build/BP2A.250605.031.A3; Cronet/TTNet)')
+PLAY_UA = DEVICE_PROFILES['xiaomi_pad']['ua']
 
 
 def _signed_post(identity, api: str, payload: dict):
-    """构造一次签名 POST（gzip body + 全套签名头）。"""
-    device = dict(_PLAY_DEVICE)
-    device.update({'iid': identity.iid, 'device_id': identity.device_id,
-                   'cdid': identity.cdid})
+    """构造一次签名 POST。query/header 与客户端逐字段一致。"""
     khronos = int(time.time())
     ticket = int(time.time() * 1000)
-    query = python_url_encode({**device, '_rticket': str(ticket)})
+    query = build_common_query(identity, ticket)
     body = gzip_body(json.dumps(payload, separators=(',', ':')))
     url = f'{api}?{query}'
     headers = {
-        'User-Agent': PLAY_UA,
-        'Accept': 'application/json; charset=utf-8,application/x-protobuf',
-        'Content-Type': 'application/json; charset=utf-8',
-        'Content-Encoding': 'gzip',
+        'cookie': 'passport_csrf_token_default=0cbeb34f30a674b5a7821be5cde462f6',
+        'accept': 'application/json; charset=utf-8,application/x-protobuf',
+        'content-encoding': 'gzip',
+        'x-xs-from-web': '0',
         'x-ss-req-ticket': str(ticket),
-        'x-reading-request': f'{ticket + 1}-{random.randint(100000000, 999999999)}',
-        'x-vc-bdturing-sdk-version': '4.0.3.cn', 'lc': '101', 'sdk-version': '2',
-        'passport-sdk-version': '5051452', 'x-ss-stub': md5_hex(body),
-        'x-tt-store-region': 'cn-bj', 'x-tt-store-region-src': 'did',
-        'x-ss-dp': '8662', 'x-xs-from-web': '0',
-        'x-khronos': str(khronos),
-        'x-ladon': x_ladon(khronos), 'x-argus': x_argus(khronos),
+        'x-reading-request': new_reading_request(ticket),
+        'x-vc-bdturing-sdk-version': '4.0.3.cn',
+        'lc': '101',
+        'sdk-version': '2',
+        'passport-sdk-version': '5051452',
+        'content-type': 'application/json; charset=utf-8',
+        'x-ss-stub': md5_hex(body),
+        'x-tt-store-region': 'cn-bj',
+        'x-tt-store-region-src': 'did',
+        'x-ss-dp': '8662',
+        'x-tt-trace-id': new_trace_id(),
+        'user-agent': PLAY_UA,
+        'accept-encoding': 'gzip, deflate, br',
+        'x-argus': x_argus(khronos),
         'x-gorgon': x_gorgon(query.encode(), body, khronos, random.getrandbits(16)),
         'x-helios': x_helios(khronos),
+        'x-khronos': str(khronos),
+        'x-ladon': x_ladon(khronos),
         'x-medusa': build_medusa(url, body, khronos,
                                   {'device_id': identity.device_id,
                                    'version_name': '7.4.5.32'}),
     }
     if getattr(identity, 'sessionid', None):
-        headers['Cookie'] = f'sessionid={identity.sessionid}'
+        headers['cookie'] = (f'passport_csrf_token_default='
+                             '0cbeb34f30a674b5a7821be5cde462f6; '
+                             f'sessionid={identity.sessionid}')
     return url, body, headers
 
 
 def video_detail_request(identity, book_id: str):
-    """短剧详情（剧集列表+简介）。book_id 形如 7703125506568244248。
-
-    App 7.4.5 起 payload 用 series_id 字段（book_id 字段已废）。
-    """
+    """短剧详情（剧集列表+简介）。book_id 形如 7703125506568244248。"""
     sid = str(book_id)
     payload = {
         'series_id': sid, 'source': 2,

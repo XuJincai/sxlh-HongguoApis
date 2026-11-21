@@ -125,6 +125,8 @@ def register(session=None, device_model='25053RT47C', device_brand='Redmi'):
         'device_id': _id('device_id'),
         'iid': _id('install_id'),
         'cdid': cdid,
+        'klink_egdi': data.get('klink_egdi') or '',
+        'device_token': data.get('device_token') or '',
         'raw': data,
     }
 

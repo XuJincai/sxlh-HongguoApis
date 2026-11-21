@@ -3,7 +3,7 @@
 
 这一族与搜索/播放接口的签名不同：X-Gorgon 头部带 nonce 派生的两个字节，
 X-Ladon 是 34 轮 uint64 密钥扩展 + TEA 风格变换，X-Argus 是 protobuf 组包
-+ SM3 派生 72 轮变换 + AES-128-CBC。全部本地可算，不依赖真机。
++ SM3 派生 72 轮变换 + AES-128-CBC。全部本地可算。
 
 主要入口：
 - `build_query(device_id, iid, stamp_ms)` —— 评论接口的排序 query 串。

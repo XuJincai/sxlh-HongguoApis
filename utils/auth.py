@@ -15,18 +15,23 @@ import time
 class GuestIdentity:
     """游客身份。`from_register()` 走设备注册拿真身份，`from_json()` 复用落盘档案。"""
 
-    def __init__(self, device_id: str, iid: str, cdid: str):
+    def __init__(self, device_id: str, iid: str, cdid: str,
+                 klink_egdi: str = '', device_token: str = ''):
         if not (device_id and device_id.isdigit() and iid and iid.isdigit()):
             raise ValueError('device_id/iid 必须是数字串')
         self.device_id = str(device_id)
         self.iid = str(iid)
         self.cdid = cdid
+        # device_register 下发的设备级凭证，接口 query 里要带（与客户端一致）
+        self.klink_egdi = klink_egdi
+        self.device_token = device_token
 
     @classmethod
     def from_register(cls, session=None):
         from utils.device_register import register
         info = register(session)
-        identity = cls(info['device_id'], info['iid'], info['cdid'])
+        identity = cls(info['device_id'], info['iid'], info['cdid'],
+                        info.get('klink_egdi', ''), info.get('device_token', ''))
         identity.raw = info.get('raw', {})
         identity.registered_at = time.time()
         return identity
@@ -35,21 +40,26 @@ class GuestIdentity:
     def from_json_file(cls, path='guest_identity.json'):
         with open(path, encoding='utf-8') as f:
             data = json.load(f)
-        identity = cls(data['device_id'], data['iid'], data['cdid'])
+        identity = cls(data['device_id'], data['iid'], data['cdid'],
+                        data.get('klink_egdi', ''), data.get('device_token', ''))
         identity.raw = data.get('raw', {})
         identity.registered_at = data.get('registered_at', 0)
         return identity
 
     def save(self, path='guest_identity.json'):
         payload = {'device_id': self.device_id, 'iid': self.iid, 'cdid': self.cdid,
+                   'klink_egdi': self.klink_egdi, 'device_token': self.device_token,
                    'registered_at': getattr(self, 'registered_at', 0),
                    'raw': getattr(self, 'raw', {})}
         with open(path, 'w', encoding='utf-8') as f:
             json.dump(payload, f, ensure_ascii=False, indent=1)
 
     def as_query(self) -> dict:
-        """游客接口 query 里的身份参数。"""
-        return {'iid': self.iid, 'device_id': self.device_id}
+        """游客接口 query 里的身份参数（含设备凭证）。"""
+        out = {'iid': self.iid, 'device_id': self.device_id}
+        if self.klink_egdi:
+            out['klink_egdi'] = self.klink_egdi
+        return out
 
 
 class LoginIdentity(GuestIdentity):

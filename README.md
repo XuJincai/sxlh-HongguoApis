@@ -9,7 +9,10 @@
 - **搜索**：`reading/bookapi/search/tab/v`，关键词搜短剧，翻页游标（search_id/passback/next_offset）完整
 - **详情**：`novel/player/video_detail/v1`，剧集列表（95+ 集）+ 简介 + 分类 + 播放计数
 - **播放地址**：`novel/player/multi_video_model/player/v1`，5 档清晰度（360p~1080p）可下载 MP4 源
-- **剧评**：官网 SSR 匿名页（每集 15 条预览，总数可见）
+- **评论**：`novel/commentapi/comment/list/{group_id}/v1`（App 端点，游客可用）
+  - 剧评：group_id=series_id, group_type=1, comment_source=1, server_channel=33
+  - 单集评论：group_id=video_id, group_type=30, comment_source=4, server_channel=17
+  - 支持翻页（cursor）、点赞数/回复数/作者信息
 - **弹幕**：`novel/commentapi/comment/list/{vid}/v1`，时轴弹幕分页拉全量
 
 登录态（sessionid，见下）：
@@ -44,7 +47,8 @@ from utils.auth import GuestIdentity
 from hongguo_apis import (search_request, parse_search_response,
                           video_detail_request, parse_video_detail,
                           player_model_request, parse_video_models,
-                          fetch_episode_comments, fetch_danmaku)
+                          comment_list_request, parse_comment_list,
+                          fetch_danmaku)
 import requests, json
 
 s = requests.Session()
@@ -72,8 +76,13 @@ models = parse_video_models(data)
 print(models[vid]['main_url'])          # 1080p MP4 直链
 print([q['definition'] for q in models[vid]['qualities']])
 
-# 5. 剧评（官网匿名页）
-comments = fetch_episode_comments(result['books'][0]['book_id'], vid)
+# 5. 剧评（App 端点，书级评论列表 + 翻页）
+sid = result['books'][0]['book_id']
+url, body, headers = comment_list_request(guest, sid, 1, 1, 33, 2, book_id=sid, count=20)
+data = s.post(url, data=body, headers=headers, timeout=15).json()
+res = parse_comment_list(data)
+print(res['total'], [c['text'][:20] for c in res['comments'][:3]])
+# 单集评论：group_id=vid, group_type=30, comment_source=4, server_channel=17
 
 # 6. 弹幕（时轴）
 danmaku = fetch_danmaku(guest, vid, result['books'][0]['book_id'])

@@ -5,9 +5,10 @@
     python main.py search 总裁
     python main.py detail <book_id>
     python main.py play <book_id>
-    python main.py comments <book_id> <video_id>
+    python main.py comments <book_id>              # 剧评（书级）
+    python main.py comments <book_id> <video_id>   # 单集评论
     python main.py danmaku <book_id> <video_id>
-    python main.py demo <关键词>     # 搜索 -> 详情 -> 播放地址 -> 评论 全链路
+    python main.py demo <关键词>     # 搜索 -> 详情 -> 播放地址 -> 评论 -> 弹幕 全链路
 """
 
 import json
@@ -16,10 +17,12 @@ import time
 import urllib.request
 
 from utils.auth import GuestIdentity
+from utils.device_profile import decode_response
 from hongguo_apis import (search_request, parse_search_response,
                           video_detail_request, parse_video_detail,
                           player_model_request, parse_video_models,
-                          fetch_episode_comments, fetch_danmaku)
+                          comment_list_request, parse_comment_list,
+                          fetch_danmaku)
 
 IDENTITY_FILE = 'guest_identity.json'
 
@@ -47,6 +50,8 @@ def http_post_json(url, body, headers, tries=4):
         with urllib.request.urlopen(req, timeout=20) as r:
             last = r.read()
         if last:
+            enc = r.headers.get('content-encoding', '')
+            last = decode_response(last, enc)
             return json.loads(last)
         time.sleep(0.4)
     raise RuntimeError(f'服务器连续返回空 body: {url[:80]}')
@@ -54,20 +59,22 @@ def http_post_json(url, body, headers, tries=4):
 
 def signed_post(fn, *args, **kwargs):
     """调用 *_request(identity, ...) 生成签名请求并执行。失败重签重试。"""
+    last_err = None
     for _ in range(4):
         url, body, headers = fn(*args, **kwargs)
         try:
             return http_post_json(url, body, headers, tries=1)
-        except (RuntimeError, json.JSONDecodeError):
+        except (RuntimeError, json.JSONDecodeError) as ex:
+            last_err = ex
             time.sleep(0.4)
-    raise RuntimeError('签名请求多次失败')
+    raise RuntimeError(f'签名请求多次失败: {last_err}')
 
 
 def cmd_search(guest, keyword):
     url, headers = search_request(guest, keyword)
     req = urllib.request.Request(url, headers=headers)
     with urllib.request.urlopen(req, timeout=20) as r:
-        data = json.loads(r.read())
+        data = json.loads(decode_response(r.read(), r.headers.get('content-encoding', '')))
     result = parse_search_response(data)
     print(f"[+] 搜索「{keyword}」: {len(result['books'])} 部")
     for b in result['books']:
@@ -98,12 +105,30 @@ def cmd_play(guest, book_id, limit=3):
     return models
 
 
-def cmd_comments(guest, book_id, video_id):
-    result = fetch_episode_comments(book_id, video_id)
-    print(f"[+] 官网剧评 {len(result['items'])} 条 (total={result['total']})")
-    for c in result['items'][:10]:
-        print(f"  [{c['author']}] {c['content'][:60]}")
-    return result
+def cmd_comments(guest, book_id, video_id=None, pages=1):
+    """评论列表。无 video_id = 剧评（书级）；有 = 单集评论。"""
+    total_shown = []
+    cursor = ''
+    for page in range(pages):
+        if video_id:
+            gid, gt, cs, sc, ct = video_id, 30, 4, 17, 4
+        else:
+            gid, gt, cs, sc, ct = book_id, 1, 1, 33, 2
+        d = signed_post(comment_list_request, guest, gid, gt, cs, sc, ct,
+                        book_id=book_id, count=20, cursor=cursor)
+        result = parse_comment_list(d)
+        if page == 0:
+            label = '单集评论' if video_id else '剧评'
+            print(f"[+] {label} total={result['total']}")
+        for c in result['comments']:
+            print(f"  [{c['user_name']}] (digg {c['digg_count']}) "
+                  f"{(c['text'] or '')[:60]}")
+        total_shown.extend(result['comments'])
+        cursor = result['cursor'] or ''
+        if not result['has_more']:
+            break
+        time.sleep(0.3)
+    return total_shown
 
 
 def cmd_danmaku(guest, book_id, video_id):
@@ -136,7 +161,7 @@ def cmd_demo(guest, keyword):
         print(f"    {mi['main_url']}")
 
     print('\n=== 4. 剧评 ===')
-    cmd_comments(guest, book['book_id'], vids[0])
+    cmd_comments(guest, book['book_id'], pages=1)
 
     print('\n=== 5. 弹幕 ===')
     cmd_danmaku(guest, book['book_id'], vids[0])
@@ -154,8 +179,9 @@ def main():
         cmd_detail(guest, sys.argv[2])
     elif cmd == 'play' and len(sys.argv) >= 3:
         cmd_play(guest, sys.argv[2])
-    elif cmd == 'comments' and len(sys.argv) >= 4:
-        cmd_comments(guest, sys.argv[2], sys.argv[3])
+    elif cmd == 'comments' and len(sys.argv) >= 3:
+        vid = sys.argv[3] if len(sys.argv) >= 4 else None
+        cmd_comments(guest, sys.argv[2], vid)
     elif cmd == 'danmaku' and len(sys.argv) >= 4:
         cmd_danmaku(guest, sys.argv[2], sys.argv[3])
     elif cmd == 'demo' and len(sys.argv) >= 3:

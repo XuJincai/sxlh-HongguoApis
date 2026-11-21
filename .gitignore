@@ -29,3 +29,4 @@ wire_test.py
 py_md5v3.txt
 py_message_v0.bin
 sbox_b64_exact.txt
+guest_identity_fresh.json

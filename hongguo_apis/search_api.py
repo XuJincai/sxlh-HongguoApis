@@ -10,6 +10,7 @@ import time
 
 from utils.hongguo_sign import (python_url_encode, sign_headers, branch_of,
                                  x_ladon, x_argus, x_gorgon, x_helios, gzip_body)
+from utils.device_profile import new_trace_id, new_reading_request
 
 SEARCH_API = 'https://api5-normal-sinfonlinea.fqnovel.com/reading/bookapi/search/tab/v'
 
@@ -43,6 +44,8 @@ def search_request(identity, keyword: str, page: int = 1, cursor: dict = None):
     device = dict(_SEARCH_DEVICE)
     device.update({'iid': identity.iid, 'device_id': identity.device_id,
                    'cdid': identity.cdid})
+    if getattr(identity, 'klink_egdi', ''):
+        device['klink_egdi'] = identity.klink_egdi
     khronos = int(time.time())
     ticket_base = int(time.time() * 1000)
 
@@ -71,11 +74,25 @@ def search_request(identity, keyword: str, page: int = 1, cursor: dict = None):
     from utils.medusa import build_medusa
     rnd = random.getrandbits(16)
     url = f'{SEARCH_API}?{query}'
+    # header 集与顺序与客户端 GET 族一致（cookie→…→x-medusa），搜索族特有的
+    # x-tt-request-tag / x-tt-dt / passport-sdk-version 50561 按搜索族保留
     headers = {
+        'cookie': 'passport_csrf_token_default=0cbeb34f30a674b5a7821be5cde462f6',
+        'accept': 'application/json; charset=utf-8,application/x-protobuf',
+        'x-xs-from-web': '0',
+        'x-ss-req-ticket': str(ticket),
+        'x-reading-request': new_reading_request(ticket),
+        'x-vc-bdturing-sdk-version': '4.0.3.cn',
+        'x-tt-request-tag': 't=0;n=0',
+        'lc': '101',
+        'sdk-version': '2',
+        'passport-sdk-version': '50561',
+        'x-tt-store-region': 'cn-bj',
+        'x-tt-store-region-src': 'did',
+        'x-ss-dp': '8662',
+        'x-tt-trace-id': new_trace_id(),
         'User-Agent': SEARCH_UA,
-        'Accept': 'application/json; charset=utf-8,application/x-protobuf',
-        'x-ss-req-ticket': str(ticket), 'x-tt-request-tag': 't=0;n=0',
-        'sdk-version': '2', 'passport-sdk-version': '50561', 'x-xs-from-web': '0',
+        'accept-encoding': 'gzip, deflate, br',
         'x-khronos': str(khronos),
         'x-ladon': x_ladon(khronos),
         'x-argus': x_argus(khronos),
@@ -87,7 +104,9 @@ def search_request(identity, keyword: str, page: int = 1, cursor: dict = None):
         'x-tt-dt': '',
     }
     if getattr(identity, 'sessionid', None):
-        headers['Cookie'] = f'sessionid={identity.sessionid}'
+        headers['cookie'] = ('passport_csrf_token_default='
+                             '0cbeb34f30a674b5a7821be5cde462f6; '
+                             f'sessionid={identity.sessionid}')
     return url, headers
 
 

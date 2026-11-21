@@ -17,6 +17,8 @@ from utils.hongguo_sign import x_helios, sm3, md5_raw, x_gorgon  # noqa: E402
 from utils.comment_sign import (build_query, comment_x_gorgon,  # noqa: E402
                                 comment_x_ladon, comment_x_argus)
 from utils.medusa import build_medusa, AesV3  # noqa: E402
+from hongguo_apis.comment_api import (build_comment_body,  # noqa: E402
+                                      parse_comment_list)
 
 
 class _FixedRand:
@@ -126,6 +128,32 @@ class TestSignOffline(unittest.TestCase):
         e2 = aes.encrypt(data, iv)
         self.assertEqual(e1, e2)
         self.assertGreater(len(e1), 60)
+
+    def test_comment_list_body_structure(self):
+        # 评论族 body：字段集与顺序与 7.4.5 客户端一致
+        body = build_comment_body('7703125517758647320', 30, 4, 17, 4,
+                                  book_id='7703125506568244248', count=20)
+        self.assertEqual(list(body.keys()),
+                         ['business_param', 'comment_source', 'comment_type',
+                          'count', 'group_id', 'group_type', 'server_channel',
+                          'sort'])
+        self.assertEqual(list(body['business_param'].keys())[-1],
+                         'playlet_item_duration')
+
+    def test_comment_list_parse(self):
+        item = {'comment': {'comment_id': '1', 'stat': {'digg_count': 9},
+                            'common': {'content': {'text': 'x'},
+                                       'create_timestamp': 123,
+                                       'user_info': {'base_info':
+                                                     {'user_id': 'u',
+                                                      'user_name': 'n'}}}}}
+        data = {'data': {'data_list': [item],
+                         'common_list_info': {'total': 1, 'has_more': False,
+                                              'cursor': ''}}}
+        res = parse_comment_list(data)
+        self.assertEqual(res['comments'][0]['digg_count'], 9)
+        self.assertEqual(res['comments'][0]['user_name'], 'n')
+        self.assertEqual(res['total'], 1)
 
 
 if __name__ == '__main__':
