@@ -19,7 +19,7 @@ import urllib.parse
 
 from utils.hongguo_sign import x_gorgon, x_ladon, x_argus, x_helios, md5_hex
 from utils.medusa import build_medusa
-from utils.device_profile import DEVICE_PROFILES, new_trace_id
+from utils.device_profile import DEVICE_PROFILES, new_trace_id, new_reading_request
 
 COMMENT_LIST_API = 'https://api5-normal-sinfonlinea.fqnovel.com/novel/commentapi/comment/list/{group_id}/v1'
 
@@ -134,7 +134,7 @@ def comment_list_request(identity, group_id: str, group_type: int = 1,
         'content-encoding': 'gzip',
         'x-xs-from-web': '0',
         'x-ss-req-ticket': str(ticket),
-        'x-reading-request': f'{ticket}-{random.randint(100000000, 999999999)}',
+        'x-reading-request': new_reading_request(ticket),
         'x-vc-bdturing-sdk-version': '4.0.3.cn',
         'comment-source': str(comment_source),
         'server-channel': str(server_channel),
