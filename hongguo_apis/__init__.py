@@ -12,6 +12,7 @@ from hongguo_apis.play_api import (video_detail_request, multi_video_model_reque
 from hongguo_apis.comment_api import (comment_list_request, build_comment_body,
                                        parse_comment_list)
 from hongguo_apis.danmaku_api import danmaku_request, parse_danmaku, fetch_danmaku
+from hongguo_apis.category_api import landpage_request, landpage_body, parse_landpage
 from utils.auth import GuestIdentity, LoginIdentity
 
 __all__ = [
@@ -21,5 +22,6 @@ __all__ = [
     'parse_video_detail', 'parse_video_models',
     'comment_list_request', 'build_comment_body', 'parse_comment_list',
     'danmaku_request', 'parse_danmaku', 'fetch_danmaku',
+    'landpage_request', 'landpage_body', 'parse_landpage',
     'GuestIdentity', 'LoginIdentity',
 ]

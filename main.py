@@ -7,6 +7,8 @@
     python main.py play <book_id>
     python main.py comments <book_id>              # 剧评（书级）
     python main.py comments <book_id> <video_id>   # 单集评论
+    python main.py newrelease                       # 近 7 天上新（真人剧）
+    python main.py newrelease ai                    # 近 7 天上新（AI 剧）
     python main.py danmaku <book_id> <video_id>
     python main.py demo <关键词>     # 搜索 -> 详情 -> 播放地址 -> 评论 -> 弹幕 全链路
 """
@@ -22,6 +24,7 @@ from hongguo_apis import (search_request, parse_search_response,
                           video_detail_request, parse_video_detail,
                           player_model_request, parse_video_models,
                           comment_list_request, parse_comment_list,
+                          landpage_request, parse_landpage,
                           fetch_danmaku)
 
 IDENTITY_FILE = 'guest_identity.json'
@@ -114,9 +117,15 @@ def cmd_comments(guest, book_id, video_id=None, pages=1):
             gid, gt, cs, sc, ct = video_id, 30, 4, 17, 4
         else:
             gid, gt, cs, sc, ct = book_id, 1, 1, 33, 2
-        d = signed_post(comment_list_request, guest, gid, gt, cs, sc, ct,
-                        book_id=book_id, count=20, cursor=cursor)
-        result = parse_comment_list(d)
+        result = None
+        for _ in range(4):
+            d = signed_post(comment_list_request, guest, gid, gt, cs, sc, ct,
+                            book_id=book_id, count=20, cursor=cursor)
+            result = parse_comment_list(d)
+            if result['comments'] or not result['has_more']:
+                break
+            # 偶发只回骨架（空 data_list + cursor），带 cursor 重试
+            cursor = result['cursor'] or cursor
         if page == 0:
             label = '单集评论' if video_id else '剧评'
             print(f"[+] {label} total={result['total']}")
@@ -129,6 +138,25 @@ def cmd_comments(guest, book_id, video_id=None, pages=1):
             break
         time.sleep(0.3)
     return total_shown
+
+
+def cmd_newrelease(guest, ai=False, pages=2):
+    """近 7 天上新列表（线上时间倒序）。ai=False 真人剧 / True AI 剧。"""
+    genre = 'ai_series' if ai else 'short_play'
+    scene = 'ai_series' if ai else 'default'
+    offset, session_id, total = 0, '', []
+    for page in range(pages):
+        d = signed_post(landpage_request, guest, genre, scene, offset, session_id)
+        result = parse_landpage(d)
+        total.extend(result['series'])
+        if not result['has_more']:
+            break
+        offset, session_id = result['next_offset'], result['session_id']
+    print(f"[+] 近 7 天上新 {'AI 剧' if ai else '真人剧'}: {len(total)} 部")
+    for s in total[:20]:
+        mark = ' [今日上新]' if s['released_today'] else ''
+        print(f"  {s['book_id']}  {s['title']}  ep{s['episode_count']}{mark}")
+    return total
 
 
 def cmd_danmaku(guest, book_id, video_id):
@@ -182,6 +210,8 @@ def main():
     elif cmd == 'comments' and len(sys.argv) >= 3:
         vid = sys.argv[3] if len(sys.argv) >= 4 else None
         cmd_comments(guest, sys.argv[2], vid)
+    elif cmd == 'newrelease' and len(sys.argv) >= 2:
+        cmd_newrelease(guest, ai=(len(sys.argv) >= 3 and sys.argv[2] == 'ai'))
     elif cmd == 'danmaku' and len(sys.argv) >= 4:
         cmd_danmaku(guest, sys.argv[2], sys.argv[3])
     elif cmd == 'demo' and len(sys.argv) >= 3:

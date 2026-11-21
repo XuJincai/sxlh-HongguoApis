@@ -9,6 +9,9 @@
 - **搜索**：`reading/bookapi/search/tab/v`，关键词搜短剧，翻页游标（search_id/passback/next_offset）完整
 - **详情**：`novel/player/video_detail/v1`，剧集列表（95+ 集）+ 简介 + 分类 + 播放计数
 - **播放地址**：`novel/player/multi_video_model/player/v1`，5 档清晰度（360p~1080p）可下载 MP4 源
+- **上新发现**：`/reading/distribution/category/landpage/v`（App 端点，游客可用）
+  - 真人剧 genre=short_play / AI 剧 genre=ai_series，按线上时间倒序
+  - 近 7 天上新（含「今日上新」标记），翻页 next_offset+session_id
 - **评论**：`novel/commentapi/comment/list/{group_id}/v1`（App 端点，游客可用）
   - 剧评：group_id=series_id, group_type=1, comment_source=1, server_channel=33
   - 单集评论：group_id=video_id, group_type=30, comment_source=4, server_channel=17
