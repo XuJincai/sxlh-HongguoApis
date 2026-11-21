@@ -13,6 +13,7 @@
     python main.py demo <关键词>     # 搜索 -> 详情 -> 播放地址 -> 评论 -> 弹幕 全链路
     python main.py login              # 官网扫码登录 -> login_identity.json
     python main.py account            # 打印已登录账号资料 + App 观看历史
+    python main.py browserlogin       # 浏览器扫码后粘贴 cookie 登录
 """
 
 import json
@@ -260,6 +261,30 @@ def cmd_account():
               f"{int(row['current_time'])}/{int(row['duration'])}s")
 
 
+def cmd_browser_login(guest):
+    """浏览器扫码后：粘贴 document.cookie 完成 LoginIdentity。"""
+    from utils.auth import LoginIdentity
+    from hongguo_apis.login_api import fetch_account_info
+    print('[*] 打开 https://hongguoduanju.com/ -> 登录 -> 扫码登录 tab -> App 扫码')
+    print('[*] 登录成功后，在浏览器控制台输入 document.cookie 并把整串粘贴到这里:')
+    cookie = input('cookie> ').strip()
+    jar = {}
+    for pair in cookie.split(';'):
+        name, _, value = pair.partition('=')
+        jar[name.strip()] = value.strip()
+    sessionid = jar.get('sessionid') or jar.get('sessionid_ss')
+    if not sessionid:
+        print('[-] cookie 里没有 sessionid')
+        return
+    profile = fetch_account_info(sessionid)
+    identity = LoginIdentity.from_guest(guest, sessionid,
+                                        profile['user_id'], profile['name'])
+    identity.sessionid_ss = jar.get('sessionid_ss', '')
+    identity.save(LOGIN_IDENTITY_FILE)
+    print(f"[+] 登录成功 user_id={identity.user_id} name={identity.user_name} "
+          f"-> {LOGIN_IDENTITY_FILE}")
+
+
 def main():
     if len(sys.argv) < 2:
         print(__doc__)
@@ -285,6 +310,8 @@ def main():
         cmd_login(guest)
     elif cmd == 'account' and len(sys.argv) >= 2:
         cmd_account()
+    elif cmd == 'browserlogin' and len(sys.argv) >= 2:
+        cmd_browser_login(guest)
     else:
         print(__doc__)
 
