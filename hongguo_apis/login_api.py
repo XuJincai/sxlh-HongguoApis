@@ -20,6 +20,7 @@ finish_redirect() 跟跳转收 cookie -> LoginIdentity。
 
 import base64
 import json
+import random
 import time
 import urllib.parse
 import urllib.request
@@ -294,60 +295,66 @@ APP_UA = ('com.phoenix.read/74532 (Linux; U; Android 16; zh_CN; '
 
 
 def _xor5(value: str) -> str:
-    """passport 参数混淆：每字节 XOR 5。"""
-    return ''.join(chr(b ^ 5) for b in value.encode('utf-8'))
+    """passport 参数混淆：每字节 XOR 5 后转 hex 字符串（每字节 2 字符）。"""
+    return ''.join(f'{b ^ 5:02x}' for b in value.encode('utf-8'))
 
 
-def _app_headers(url: str, guest, khronos: int) -> dict:
-    """App 通道请求头（复用游客签名族）。"""
+def _app_headers(url: str, guest, khronos: int, ticket: int) -> dict:
+    """App 通道请求头（与游客链同族的完整头，顺序对齐）。"""
     from utils.hongguo_sign import x_gorgon, x_ladon, x_argus, x_helios
     from utils.medusa import build_medusa
-    ticket = int(time.time() * 1000)
+    from utils.device_profile import new_trace_id, new_reading_request
     headers = {
-        'User-Agent': APP_UA,
-        'Accept': 'application/json',
+        'user-agent': APP_UA,
+        'accept': 'application/json; charset=utf-8,application/x-protobuf',
+        'x-xs-from-web': '0',
         'x-ss-req-ticket': str(ticket),
-        'x-khronos': str(khronos),
+        'x-reading-request': new_reading_request(ticket),
+        'x-vc-bdturing-sdk-version': '4.0.3.cn',
+        'x-tt-request-tag': 'novel_preload=0',
+        'lc': '101',
         'sdk-version': '2',
         'passport-sdk-version': '5051452',
         'x-ss-dp': '8662',
         'x-tt-store-region': 'cn-bj',
         'x-tt-store-region-src': 'did',
-        'x-gorgon': x_gorgon(url.encode(), None, khronos, 12345),
-        'x-ladon': x_ladon(khronos),
+        'x-tt-trace-id': new_trace_id(),
         'x-argus': x_argus(khronos),
+        'x-gorgon': x_gorgon(url.encode(), None, khronos, random.getrandbits(16)),
         'x-helios': x_helios(khronos),
+        'x-khronos': str(khronos),
+        'x-ladon': x_ladon(khronos),
         'x-medusa': build_medusa(url, None, khronos,
                                  {'device_id': guest.device_id,
                                   'version_name': '7.4.5.32'}),
-        'Accept-Encoding': 'identity',
+        'accept-encoding': 'gzip, deflate, br',
     }
     return headers
 
 
 def _app_get(path: str, extra: dict, guest, timeout: int = 15):
-    """App 通道 GET：返回 (data_json, set_cookies)。"""
+    """App 通道 GET：返回 (data_json, set_cookies)。
+
+    query 走客户端公共块（30+ 字段、顺序固定），业务参数（mobile/type 等）
+    附加在公共块之后——与客户端 passport 请求形态一致。
+    """
     khronos = int(time.time())
     ticket = int(time.time() * 1000)
-    params = {
-        'aid': '8662',
-        'app_name': 'novelapp',
-        'channel': 'App Store',
-        'device_platform': 'android',
-        'version_code': '74532',
-        'device_id': guest.device_id,
-        'iid': guest.iid,
-        'ts': str(khronos),
-        '_rticket': str(ticket),
-    }
-    params.update(extra)
-    query = urllib.parse.urlencode({k: v for k, v in params.items() if v})
+    from utils.device_profile import build_common_query
+    common = build_common_query(guest, ticket)
+    business = urllib.parse.urlencode({k: v for k, v in extra.items() if v})
+    # passport 族在公共块尾部补 ts（客户端形态）
+    query = common + '&ts=' + str(khronos) + ('&' + business if business else '')
     url = APP_PASSPORT_BASE + path + '?' + query
-    req = urllib.request.Request(url, headers=_app_headers(url, guest, khronos))
+    req = urllib.request.Request(url, headers=_app_headers(url, guest,
+                                                           khronos, ticket))
     with urllib.request.urlopen(req, timeout=timeout) as r:
-        raw = r.read().decode('utf-8', 'replace')
+        raw = r.read()
+        encoding = (r.headers.get('Content-Encoding') or '').lower()
+        from utils.device_profile import decode_response
+        raw = decode_response(raw, encoding)
         set_cookies = r.headers.get_all('Set-Cookie') or []
-    return json.loads(raw), set_cookies
+    return json.loads(raw.decode('utf-8', 'replace')), set_cookies
 
 
 def send_sms_code(guest, mobile: str, code_type: int = 24) -> dict:
