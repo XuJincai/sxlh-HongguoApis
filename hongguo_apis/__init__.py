@@ -14,6 +14,7 @@ from hongguo_apis.comment_api import (comment_list_request, build_comment_body,
 from hongguo_apis.danmaku_api import danmaku_request, parse_danmaku, fetch_danmaku
 from hongguo_apis.category_api import landpage_request, landpage_body, parse_landpage
 from hongguo_apis.user_api import user_info_request, fetch_user_info, parse_user_info
+from hongguo_apis.recommend_api import book_pack_request, parse_book_pack
 from utils.auth import GuestIdentity, LoginIdentity
 
 __all__ = [
@@ -25,5 +26,6 @@ __all__ = [
     'danmaku_request', 'parse_danmaku', 'fetch_danmaku',
     'landpage_request', 'landpage_body', 'parse_landpage',
     'user_info_request', 'fetch_user_info', 'parse_user_info',
+    'book_pack_request', 'parse_book_pack',
     'GuestIdentity', 'LoginIdentity',
 ]
