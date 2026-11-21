@@ -235,14 +235,29 @@ def cmd_login(guest):
 
 
 def cmd_account():
-    """打印登录账号资料（官网 /passport/account/info/v2/）。"""
+    """打印登录账号资料 + App 观看历史。"""
     from utils.auth import LoginIdentity
     from hongguo_apis.login_api import fetch_account_info
+    from hongguo_apis.account_api import (user_info_request, fetch_history_list,
+                                          parse_history_list)
     identity = LoginIdentity.from_json_file(LOGIN_IDENTITY_FILE)
     info = fetch_account_info(identity.sessionid)
-    print(f"[+] user_id={info['user_id']}")
-    print(f"[+] name={info['name']}")
+    print(f"[+] 官网资料 user_id={info['user_id']} name={info['name']}")
     print(f"[+] avatar={info['avatar'][:80]}")
+
+    url, headers = user_info_request(identity)
+    req = urllib.request.Request(url, headers=headers)
+    with urllib.request.urlopen(req, timeout=20) as r:
+        raw = decode_response(r.read(), r.headers.get('content-encoding', ''))
+    app_user = json.loads(raw).get('data') or {}
+    print(f"[+] App 档案 user_id={app_user.get('req_id') or app_user.get('user_id')} "
+          f"name={app_user.get('user_name')}")
+
+    history = parse_history_list(fetch_history_list(identity))
+    print(f"[+] 观看历史 {len(history['items'])} 条")
+    for row in history['items'][:10]:
+        print(f"    {row['series_title']} 第{row['vid_index']}集 "
+              f"{int(row['current_time'])}/{int(row['duration'])}s")
 
 
 def main():
