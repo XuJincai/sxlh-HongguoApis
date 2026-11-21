@@ -15,6 +15,8 @@ from hongguo_apis.danmaku_api import danmaku_request, parse_danmaku, fetch_danma
 from hongguo_apis.category_api import landpage_request, landpage_body, parse_landpage
 from hongguo_apis.user_api import user_info_request, fetch_user_info, parse_user_info
 from hongguo_apis.recommend_api import book_pack_request, parse_book_pack
+from hongguo_apis.history_api import (history_update_body,  # noqa: E402
+                                     history_update_request)
 from utils.auth import GuestIdentity, LoginIdentity
 
 __all__ = [
@@ -27,5 +29,6 @@ __all__ = [
     'landpage_request', 'landpage_body', 'parse_landpage',
     'user_info_request', 'fetch_user_info', 'parse_user_info',
     'book_pack_request', 'parse_book_pack',
+    'history_update_body', 'history_update_request',
     'GuestIdentity', 'LoginIdentity',
 ]

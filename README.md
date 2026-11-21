@@ -18,9 +18,12 @@
   - 支持翻页（cursor）、点赞数/回复数/作者信息
 - **弹幕**：`novel/commentapi/comment/list/{vid}/v1`，时轴弹幕分页拉全量
 
+- **相似剧/专辑**：`reading/distribution/book_pack_fields/inner_feed_detail/v1`（季数/催更数/爆剧标签）
+- **观看进度上报**：`reading/bookapi/read_history/update/v`（游客态写匿名档案，登录态写账号）
+
 登录态（sessionid，见下）：
 
-- **发评论 / 点赞 / 追更 / 观看历史** —— 写接口需要登录 cookie
+- **发评论 / 点赞 / 追更** —— 写接口需要登录 cookie
 
 ## 签名体系
 
