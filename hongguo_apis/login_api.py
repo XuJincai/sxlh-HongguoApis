@@ -44,12 +44,19 @@ QR_STATUS_EXPIRED = ('5', 'expired')     # 过期
 
 
 def _web_headers(cookie: str = '') -> dict:
-    """官网 passport 请求头（浏览器形态）。"""
+    """官网 passport 请求头（Chrome 141 macOS 浏览器形态）。"""
     headers = {
         'User-Agent': WEB_UA,
+        'Accept': 'application/json, text/javascript',
+        'Accept-Language': 'zh-CN,zh;q=0.9',
         'Referer': f'{WEB_BASE}/',
         'Origin': WEB_BASE,
-        'Accept': 'application/json, text/javascript',
+        'sec-ch-ua': '"Chromium";v=\"141\", \"Not=A?Brand\";v=\"24\"',
+        'sec-ch-ua-mobile': '?0',
+        'sec-ch-ua-platform': '"macOS"',
+        'Sec-Fetch-Dest': 'empty',
+        'Sec-Fetch-Mode': 'cors',
+        'Sec-Fetch-Site': 'same-origin',
     }
     if cookie:
         headers['Cookie'] = cookie
