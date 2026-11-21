@@ -15,6 +15,8 @@
     python main.py account            # 打印已登录账号资料 + App 观看历史
     python main.py browserlogin       # 浏览器扫码后粘贴 cookie 登录
     python main.py smslogin            # 手机验证码登录（App 通道发码+登录）
+    python main.py commentadd <series_id> <text> [video_id]  # 发评论（带 video_id=单集）
+    python main.py like <series_id> <comment_id> [off]       # 点赞（off=取消）
 """
 
 import json
@@ -311,6 +313,42 @@ def cmd_smslogin(guest, mobile, code=None, mfa_key=''):
           f"name={identity.user_name} -> {LOGIN_IDENTITY_FILE}")
 
 
+def cmd_commentadd(book_id, text, video_id=None):
+    """发评论（登录态）。带 video_id 发单集评论，否则发剧评。"""
+    from utils.auth import LoginIdentity
+    from hongguo_apis.comment_write_api import add_comment
+    identity = LoginIdentity.from_json_file(LOGIN_IDENTITY_FILE)
+    if video_id:
+        r = add_comment(identity, video_id, text, group_type=30,
+                        commit_source=3, data_type=4, book_id=book_id)
+        where = f'{book_id} 的第 1 集 ({video_id})'
+    else:
+        r = add_comment(identity, book_id, text)
+        where = book_id
+    status = (r.get('BaseResp') or {}).get('StatusCode')
+    if status == 0:
+        info = ((r.get('data') or {}).get('comment_info') or {})
+        print(f"[+] 评论已发送 -> {where}  comment_id={info.get('comment_id')}")
+    else:
+        print(f"[-] 发送失败: {r.get('message')} (code={status}) "
+              f"{r.get('debug_info', '')[:80]}")
+
+
+def cmd_like(book_id, comment_id, off=False):
+    """点赞/取消点赞一条评论（登录态）。"""
+    from utils.auth import LoginIdentity
+    from hongguo_apis.comment_write_api import do_action
+    identity = LoginIdentity.from_json_file(LOGIN_IDENTITY_FILE)
+    r = do_action(identity, book_id, comment_id,
+                  action_type=4 if off else 3)
+    status = (r.get('BaseResp') or {}).get('StatusCode')
+    action = '取消点赞' if off else '点赞'
+    if status == 0:
+        print(f"[+] {action}成功 comment_id={comment_id}")
+    else:
+        print(f"[-] {action}失败: {r.get('message')} (code={status})")
+
+
 def cmd_browser_login(guest):
     """浏览器扫码后：粘贴 document.cookie 完成 LoginIdentity。"""
     from utils.auth import LoginIdentity
@@ -365,6 +403,13 @@ def main():
     elif cmd == 'smslogin' and len(sys.argv) >= 3:
         code = sys.argv[3] if len(sys.argv) >= 4 else None
         cmd_smslogin(guest, sys.argv[2], code)
+    elif cmd == 'commentadd' and len(sys.argv) >= 4:
+        # commentadd <series_id> <text> [video_id]  # 带视频 ID = 单集评论
+        cmd_commentadd(sys.argv[2], sys.argv[3],
+                       sys.argv[4] if len(sys.argv) >= 5 else None)
+    elif cmd == 'like' and len(sys.argv) >= 4:
+        # like <series_id> <comment_id> [off]  # off = 取消点赞
+        cmd_like(sys.argv[2], sys.argv[3], off=len(sys.argv) >= 5)
     else:
         print(__doc__)
 
