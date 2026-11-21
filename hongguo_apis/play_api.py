@@ -25,6 +25,7 @@ API_BASE = 'https://api5-normal-sinfonlinea.fqnovel.com'
 VIDEO_DETAIL_API = API_BASE + '/novel/player/video_detail/v1/'
 VIDEO_MODEL_API = API_BASE + '/novel/player/multi_video_model/v1/'
 PLAYER_MODEL_API = API_BASE + '/novel/player/multi_video_model/player/v1'
+SINGLE_VIDEO_MODEL_API = API_BASE + '/novel/player/video_model/v1/'
 
 PLAY_UA = DEVICE_PROFILES['xiaomi_pad']['ua']
 
@@ -107,6 +108,22 @@ def multi_video_model_request(identity, video_ids: list, offset=0, count=20):
         'source': 1, 'pack_channel': 'video_playback',
     }
     return _signed_post(identity, VIDEO_MODEL_API, payload)
+
+
+def single_video_model_request(identity, video_id: str):
+    """单集播放源（video_model/v1）。video_id 是单集 id。"""
+    payload = {
+        'biz_param': {
+            'detail_page_version': 0, 'device_level': 3,
+            'disable_digg_stat': False, 'disable_video_relate_book': False,
+            'from_video_id': '', 'need_all_video_definition': True,
+            'need_mp4_align': False, 'source': 1, 'use_os_player': False,
+            'use_server_dns': False, 'video_platform': 3,
+        },
+        'content_type': 1004,
+        'video_id': str(video_id),
+    }
+    return _signed_post(identity, SINGLE_VIDEO_MODEL_API, payload)
 
 
 def player_model_request(identity, video_ids: list):
