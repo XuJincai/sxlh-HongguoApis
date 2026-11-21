@@ -264,8 +264,8 @@ def cmd_account():
 
 
 
-def cmd_smslogin(guest, mobile, code=None):
-    """手机验证码登录（App 通道）。"""
+def cmd_smslogin(guest, mobile, code=None, mfa_key=''):
+    """手机验证码登录（App 通道，支持二次校验）。"""
     from hongguo_apis.login_api import (send_sms_code, login_identity_from_sms)
     if code is None:
         r = send_sms_code(guest, mobile)
@@ -277,7 +277,21 @@ def cmd_smslogin(guest, mobile, code=None):
                   f"(error_code={data.get('error_code')})")
             return
         code = input('code> ').strip()
-    identity = login_identity_from_sms(guest, mobile, code)
+    try:
+        identity = login_identity_from_sms(guest, mobile, code,
+                                           sms_code_key=mfa_key)
+    except RuntimeError as e:
+        msg = str(e)
+        if '2046' in msg and 'sms_code_key=' in msg:
+            # 触发二次校验：服务端已下发新 key，等第二条验证码
+            new_key = msg.split('sms_code_key=')[1].split('；')[0]
+            print('[!] 需要二次校验：新的验证码已发到手机（第二条短信）')
+            retry_code = input('code2> ').strip()
+            identity = login_identity_from_sms(guest, mobile, retry_code,
+                                               sms_code_key=new_key)
+        else:
+            print(f'[-] {msg}')
+            return
     identity.save(LOGIN_IDENTITY_FILE)
     print(f"[+] 登录成功 user_id={identity.user_id} "
           f"name={identity.user_name} -> {LOGIN_IDENTITY_FILE}")

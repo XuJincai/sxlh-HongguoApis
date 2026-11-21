@@ -373,9 +373,12 @@ def send_sms_code(guest, mobile: str, code_type: int = 24) -> dict:
     return body
 
 
-def sms_login(guest, mobile: str, code: str, captcha: str = '') -> dict:
+def sms_login(guest, mobile: str, code: str, captcha: str = '',
+              sms_code_key: str = '') -> dict:
     """App 通道验证码登录。
 
+    :param sms_code_key: 服务端 2046（二次校验）响应里下发的
+        biz_params.sms_code_key，二次验证时必带（同样走混淆编码）。
     :returns: {data, set_cookies} —— sessionid 在 set_cookies 里
     """
     extra = {
@@ -385,22 +388,31 @@ def sms_login(guest, mobile: str, code: str, captcha: str = '') -> dict:
     }
     if captcha:
         extra['captcha'] = captcha
+    if sms_code_key:
+        extra['sms_code_key'] = _xor5(sms_code_key)
     data, set_cookies = _app_get('/passport/mobile/sms_login_only/', extra,
                                  guest)
     return {'data': data, 'set_cookies': set_cookies}
 
 
 def login_identity_from_sms(guest, mobile: str, code: str,
-                            captcha: str = ''):
+                            captcha: str = '', sms_code_key: str = ''):
     """验证码登录一步到位 -> LoginIdentity（含 sessionid）。
 
-    失败时抛 RuntimeError（带服务端描述）。
+    失败时抛 RuntimeError（带服务端描述）；触发 2046 二次校验时错误信息里
+    带新下发的 sms_code_key（形如 `MFA:b1dd…`），用该 key 加用户收到的
+    第二条验证码重试即可。
     """
     from utils.auth import LoginIdentity
-    result = sms_login(guest, mobile, code, captcha)
+    result = sms_login(guest, mobile, code, captcha, sms_code_key)
     data = result['data'].get('data') or {}
     if result['data'].get('message') != 'success' and not data.get('user_id'):
         desc = data.get('description') or result['data'].get('message') or '登录失败'
+        if data.get('error_code') == 2046:
+            new_key = (data.get('biz_params') or {}).get('sms_code_key') or ''
+            raise RuntimeError(
+                f'验证码登录失败: 触发二次校验 (2046)。已下发新 sms_code_key={new_key}；'
+                '请等手机收到第二条验证码后，带该 key 重试')
         raise RuntimeError(f'验证码登录失败: {desc} (error_code={data.get("error_code")})')
     jar = {}
     for sc in result['set_cookies']:
