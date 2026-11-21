@@ -282,3 +282,129 @@ def login_identity_from_browser_cookie(guest, cookie_header: str):
     identity = LoginIdentity.from_guest(guest, sessionid)
     identity.sessionid_ss = jar.get('sessionid_ss', '')
     return identity
+
+
+# ---------------------------------------------------------------------------
+# App 通道：手机验证码登录（ib.snssdk.com，aid=8662）
+# ---------------------------------------------------------------------------
+APP_PASSPORT_BASE = 'https://ib.snssdk.com'
+APP_UA = ('com.phoenix.read/74532 (Linux; U; Android 16; zh_CN; '
+          '23116PN5BC; Build/BP2A.250605.031.A3; Cronet/TTNetVersion:8d40f833 '
+          '2026-03-03 QuicVersion:21ac1950 2025-11-18)')
+
+
+def _xor5(value: str) -> str:
+    """passport 参数混淆：每字节 XOR 5。"""
+    return ''.join(chr(b ^ 5) for b in value.encode('utf-8'))
+
+
+def _app_headers(url: str, guest, khronos: int) -> dict:
+    """App 通道请求头（复用游客签名族）。"""
+    from utils.hongguo_sign import x_gorgon, x_ladon, x_argus, x_helios
+    from utils.medusa import build_medusa
+    ticket = int(time.time() * 1000)
+    headers = {
+        'User-Agent': APP_UA,
+        'Accept': 'application/json',
+        'x-ss-req-ticket': str(ticket),
+        'x-khronos': str(khronos),
+        'sdk-version': '2',
+        'passport-sdk-version': '5051452',
+        'x-ss-dp': '8662',
+        'x-tt-store-region': 'cn-bj',
+        'x-tt-store-region-src': 'did',
+        'x-gorgon': x_gorgon(url.encode(), None, khronos, 12345),
+        'x-ladon': x_ladon(khronos),
+        'x-argus': x_argus(khronos),
+        'x-helios': x_helios(khronos),
+        'x-medusa': build_medusa(url, None, khronos,
+                                 {'device_id': guest.device_id,
+                                  'version_name': '7.4.5.32'}),
+        'Accept-Encoding': 'identity',
+    }
+    return headers
+
+
+def _app_get(path: str, extra: dict, guest, timeout: int = 15):
+    """App 通道 GET：返回 (data_json, set_cookies)。"""
+    khronos = int(time.time())
+    ticket = int(time.time() * 1000)
+    params = {
+        'aid': '8662',
+        'app_name': 'novelapp',
+        'channel': 'App Store',
+        'device_platform': 'android',
+        'version_code': '74532',
+        'device_id': guest.device_id,
+        'iid': guest.iid,
+        'ts': str(khronos),
+        '_rticket': str(ticket),
+    }
+    params.update(extra)
+    query = urllib.parse.urlencode({k: v for k, v in params.items() if v})
+    url = APP_PASSPORT_BASE + path + '?' + query
+    req = urllib.request.Request(url, headers=_app_headers(url, guest, khronos))
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        raw = r.read().decode('utf-8', 'replace')
+        set_cookies = r.headers.get_all('Set-Cookie') or []
+    return json.loads(raw), set_cookies
+
+
+def send_sms_code(guest, mobile: str, code_type: int = 24) -> dict:
+    """App 通道发送短信验证码。
+
+    :param code_type: 24 = 登录验证码
+    :returns: 服务端响应 data（error_code=0 或 "message"=="success" 为成功）
+    """
+    extra = {
+        'mobile': _xor5(mobile),
+        'type': _xor5(str(code_type)),
+        'mix_mode': '1',
+        'check_register': '1',
+    }
+    body, _ = _app_get('/passport/mobile/send_code/v1/', extra, guest)
+    return body
+
+
+def sms_login(guest, mobile: str, code: str, captcha: str = '') -> dict:
+    """App 通道验证码登录。
+
+    :returns: {data, set_cookies} —— sessionid 在 set_cookies 里
+    """
+    extra = {
+        'mobile': _xor5(mobile),
+        'code': _xor5(code),
+        'mix_mode': '1',
+    }
+    if captcha:
+        extra['captcha'] = captcha
+    data, set_cookies = _app_get('/passport/mobile/sms_login_only/', extra,
+                                 guest)
+    return {'data': data, 'set_cookies': set_cookies}
+
+
+def login_identity_from_sms(guest, mobile: str, code: str,
+                            captcha: str = ''):
+    """验证码登录一步到位 -> LoginIdentity（含 sessionid）。
+
+    失败时抛 RuntimeError（带服务端描述）。
+    """
+    from utils.auth import LoginIdentity
+    result = sms_login(guest, mobile, code, captcha)
+    data = result['data'].get('data') or {}
+    if result['data'].get('message') != 'success' and not data.get('user_id'):
+        desc = data.get('description') or result['data'].get('message') or '登录失败'
+        raise RuntimeError(f'验证码登录失败: {desc} (error_code={data.get("error_code")})')
+    jar = {}
+    for sc in result['set_cookies']:
+        pair = sc.split(';')[0]
+        name, _, value = pair.partition('=')
+        jar[name.strip()] = value.strip()
+    sessionid = jar.get('sessionid') or jar.get('sessionid_ss') or ''
+    if not sessionid:
+        raise RuntimeError('登录成功但 Set-Cookie 里没有 sessionid')
+    identity = LoginIdentity.from_guest(guest, sessionid,
+                                        str(data.get('user_id') or ''),
+                                        data.get('screen_name') or '')
+    identity.sessionid_ss = jar.get('sessionid_ss', '')
+    return identity

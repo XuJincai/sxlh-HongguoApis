@@ -23,6 +23,7 @@
 
 登录态（sessionid，见下）：
 
+- **手机验证码登录** —— `ib.snssdk.com/passport/mobile/send_code/v1` + `sms_login_only`（App 通道）
 - **官网扫码登录** —— `passport/web/get_qrcode/` + `check_qrconnect/` 纯 HTTP 取 sessionid
 - **账号资料** —— `passport/account/info/v2/`
 - **发评论 / 点赞 / 追更** —— 写接口需要登录 cookie
@@ -111,6 +112,7 @@ python main.py danmaku <book_id> <video_id>
 登录态：官网扫码即可，无需 App 抓包——
 
 ```bash
+python main.py smslogin 15751076989   # 手机验证码登录（App 通道发码，输入短信码即得 sessionid）
 python main.py login      # 生成 login_qr.png，用红果 App 扫码确认
 python main.py account     # 验证登录态，打印账号资料
 ```
@@ -133,7 +135,7 @@ hongguo_apis/
   play_api.py        详情 / 播放地址（7.4.5 参数族）
   comment_api.py     官网 SSR 剧评
   danmaku_api.py     App 弹幕流（comment 专用签名族）
-  login_api.py       官网扫码登录（get_qrcode -> sessionid -> LoginIdentity）
+  login_api.py       登录（扫码 web 通道 + 手机验证码 App 通道 -> LoginIdentity）
 utils/
   hongguo_sign.py    x-gorgon / x-ladon / x-argus / x-helios / hash F13
   medusa.py          x-medusa（TLV + AesV3）

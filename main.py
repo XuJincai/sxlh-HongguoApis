@@ -14,6 +14,7 @@
     python main.py login              # 官网扫码登录 -> login_identity.json
     python main.py account            # 打印已登录账号资料 + App 观看历史
     python main.py browserlogin       # 浏览器扫码后粘贴 cookie 登录
+    python main.py smslogin            # 手机验证码登录（App 通道发码+登录）
 """
 
 import json
@@ -261,6 +262,27 @@ def cmd_account():
               f"{int(row['current_time'])}/{int(row['duration'])}s")
 
 
+
+
+def cmd_smslogin(guest, mobile, code=None):
+    """手机验证码登录（App 通道）。"""
+    from hongguo_apis.login_api import (send_sms_code, login_identity_from_sms)
+    if code is None:
+        r = send_sms_code(guest, mobile)
+        data = r.get('data') or {}
+        if r.get('message') == 'success' or data.get('error_code') == 0:
+            print(f"[+] 验证码已发送到 {mobile}，请查收短信")
+        else:
+            print(f"[-] 发码失败: {data.get('description') or r.get('message')} "
+                  f"(error_code={data.get('error_code')})")
+            return
+        code = input('code> ').strip()
+    identity = login_identity_from_sms(guest, mobile, code)
+    identity.save(LOGIN_IDENTITY_FILE)
+    print(f"[+] 登录成功 user_id={identity.user_id} "
+          f"name={identity.user_name} -> {LOGIN_IDENTITY_FILE}")
+
+
 def cmd_browser_login(guest):
     """浏览器扫码后：粘贴 document.cookie 完成 LoginIdentity。"""
     from utils.auth import LoginIdentity
@@ -312,6 +334,9 @@ def main():
         cmd_account()
     elif cmd == 'browserlogin' and len(sys.argv) >= 2:
         cmd_browser_login(guest)
+    elif cmd == 'smslogin' and len(sys.argv) >= 3:
+        code = sys.argv[3] if len(sys.argv) >= 4 else None
+        cmd_smslogin(guest, sys.argv[2], code)
     else:
         print(__doc__)
 
